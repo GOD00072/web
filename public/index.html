@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ระบบจองคิวดูหน้างาน</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background-color: #f0f9f0;
+      color: #333;
+    }
+
+    h1 {
+      text-align: center;
+      color: #2e7d32;
+    }
+
+    form {
+      max-width: 600px;
+      margin: 0 auto;
+      padding: 20px;
+      background-color: #fff;
+      border: 1px solid #ddd;
+      border-radius: 10px;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    }
+
+    .form-section {
+      margin-bottom: 20px;
+    }
+
+    label {
+      font-weight: bold;
+      color: #2e7d32;
+    }
+
+    input[type="text"],
+    input[type="date"],
+    input[type="time"],
+    select,
+    button {
+      width: 100%;
+      padding: 10px;
+      margin-top: 5px;
+      margin-bottom: 15px;
+      border: 1px solid #ccc;
+      border-radius: 5px;
+    }
+
+    input[type="text"]:focus,
+    input[type="date"]:focus,
+    input[type="time"]:focus,
+    select:focus,
+    button:focus {
+      border-color: #2e7d32;
+      outline: none;
+    }
+
+    button {
+      background-color: #4caf50;
+      color: #fff;
+      border: none;
+      cursor: pointer;
+    }
+
+    button:hover {
+      background-color: #45a049;
+    }
+
+    .disabled-input {
+      background-color: #e0e0e0;
+      pointer-events: none;
+    }
+
+    .hidden {
+      display: none;
+    }
+
+    .modal {
+      position: fixed;
+      z-index: 1;
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: 100%;
+      overflow: auto;
+      background-color: rgba(0, 0, 0, 0.4);
+    }
+
+    .modal-content {
+      background-color: #fff;
+      margin: 15% auto;
+      padding: 20px;
+      border: 1px solid #888;
+      width: 80%;
+      max-width: 500px;
+      border-radius: 10px;
+    }
+
+    .close {
+      color: #aaa;
+      float: right;
+      font-size: 28px;
+      font-weight: bold;
+    }
+
+    .close:hover,
+    .close:focus {
+      color: #000;
+      text-decoration: none;
+      cursor: pointer;
+    }
+
+    #map {
+      border: 1px solid #ddd;
+      border-radius: 5px;
+    }
+  </style>
+</head>
+<body>
+  <h1>ระบบจองคิวดูหน้างาน</h1>
+  <form id="eventForm">
+    <div class="form-section">
+      <label for="fullName">ชื่อ-นามสกุล</label><br>
+      <input type="text" id="fullName" name="fullName" required><br><br>
+      <label for="phoneNumber">เบอร์โทร</label><br>
+      <input type="text" id="phoneNumber" name="phoneNumber" required pattern="[0-9]{10}" title="Please enter a 10-digit phone number"><br><br>
+      <label for="eventStartDate">นัดพบวันที่:</label><br>
+      <input type="date" id="eventStartDate" name="eventStartDate" required><br><br>
+    </div>
+    <div class="form-section">
+      <label for="eventStartTime">เวลานัดพบ:</label><br>
+      <select id="eventStartTime" name="eventStartTime" required>
+        <option value="">เลือกเวลา</option>
+        <option value="09:00">09:00</option>
+        <option value="10:00">10:00</option>
+        <option value="11:00">11:00</option>
+        <option value="13:00">13:00</option>
+        <option value="14:00">14:00</option>
+        <option value="15:00">15:00</option>
+        <option value="16:00">16:00</option>
+      </select><br><br>
+    </div>
+    <div class="form-section">
+      <label for="technician">รายชื่อช่างที่ว่าง:</label><br>
+      <select id="technician" name="technician" required>
+        <option value="">เลือกช่าง</option>
+      </select><br><br>
+    </div>
+    <div class="form-section">
+      <label for="gpsLocationDisplay">ระบุที่ตั้งตำแหน่ง:</label><br>
+      <input type="text" id="gpsLocationDisplay" placeholder="กรุณาเลือกตำแหน่ง" readonly><br>
+      <input type="text" id="gpsLocation" name="gpsLocation" hidden><br>
+      <button type="button" onclick="getCurrentLocation()">เลือกตำแหน่งของฉัน</button><br><br>
+      <div id="map" style="height: 300px;"></div>
+    </div>
+    <div id="status"></div>
+
+    <div id="myModal" class="modal hidden">
+      <div class="modal-content">
+        <span class="close">&times;</span>
+        <p id="confirmationText"></p>
+        <button id="confirmButton">ยืนยัน</button>
+      </div>
+    </div>
+
+    <div id="warningModal" class="modal hidden">
+      <div class="modal-content">
+        <span class="close" id="closeWarning">&times;</span>
+        <p id="warningText">ไม่สามารถทำการจองได้เนื่องจากช่างคนนี้ติดนัดลูกค้าคนอื่นไปแล้ว กรุณาเลือกใหม่</p>
+      </div>
+    </div>
+
+    <button type="submit">จองคิว</button>
+  </form>
+
+  <script>
+    let map;
+    let marker;
+
+    function initMap() {
+      map = new google.maps.Map(document.getElementById('map'), {
+        center: { lat: 13.7563, lng: 100.5018 },
+        zoom: 15
+      });
+
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(function(position) {
+          const pos = {
+            lat: position.coords.latitude,
+            lng: position.coords.longitude
+          };
+
+          marker = new google.maps.Marker({
+            position: pos,
+            map: map,
+            draggable: false
+          });
+
+          map.setCenter(pos);
+          updateMarkerPosition(pos);
+        }, function() {
+          handleLocationError(true, map.getCenter());
+        });
+      } else {
+        handleLocationError(false, map.getCenter());
+      }
+    }
+
+    function updateMarkerPosition(latLng) {
+      document.getElementById('gpsLocation').value = latLng.lat + ',' + latLng.lng;
+      document.getElementById('gpsLocationDisplay').value = latLng.lat + ',' + latLng.lng;
+    }
+
+    function getCurrentLocation() {
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(function(position) {
+          const pos = {
+            lat: position.coords.latitude,
+            lng: position.coords.longitude
+          };
+
+          map.setCenter(pos);
+          marker.setPosition(pos);
+          updateMarkerPosition(pos);
+        }, function() {
+          handleLocationError(true, map.getCenter());
+        });
+      } else {
+        handleLocationError(false, map.getCenter());
+      }
+    }
+
+    function handleLocationError(browserHasGeolocation, pos) {
+      console.error(browserHasGeolocation ? 'Error: The Geolocation service failed.' : 'Error: Your browser doesn\'t support geolocation.');
+    }
+
+    function updateTechnicianOptions() {
+      const date = document.getElementById('eventStartDate').value;
+      const time = document.getElementById('eventStartTime').value;
+
+      if (!date || !time) {
+        return;
+      }
+
+      const datetime = new Date(date + 'T' + time);
+      fetch(`/checkAvailability?datetime=${datetime.toISOString()}`)
+        .then(response => response.json())
+        .then(data => {
+          const technicianSelect = document.getElementById('technician');
+          technicianSelect.innerHTML = '<option value="">เลือกช่าง</option>';
+
+          data.technicians.forEach(tech => {
+            const option = document.createElement('option');
+            option.value = tech.id; // ใช้ id ของช่างเป็นค่า value
+            option.textContent = tech.name; // ใช้ชื่อช่างเป็นข้อความที่แสดง
+
+            if (!tech.available) {
+              option.disabled = true;
+            }
+
+            technicianSelect.appendChild(option);
+          });
+        })
+        .catch(error => console.error('Error fetching technician availability:', error));
+    }
+
+    document.getElementById('eventStartDate').addEventListener('change', updateTechnicianOptions);
+    document.getElementById('eventStartTime').addEventListener('change', updateTechnicianOptions);
+
+    document.getElementById('eventForm').addEventListener('submit', function(event) {
+      event.preventDefault();
+
+      const formData = new FormData(this);
+      const fullName = formData.get('fullName');
+      const phoneNumber = formData.get('phoneNumber');
+      const technicianId = formData.get('technician');
+      const gpsLocation = formData.get('gpsLocation');
+      const eventStartDate = formData.get('eventStartDate');
+      const eventStartTime = formData.get('eventStartTime');
+
+
+      const technicianName = Array.from(document.getElementById('technician').options)
+        .find(option => option.value === technicianId)?.textContent || 'ไม่ระบุช่าง';
+
+      const confirmationText = `
+        กรุณาตรวจสอบข้อมูลก่อนกดยืนยัน\n\n
+        ชื่อ นามสกุล: ${fullName}\n
+        เบอร์โทร: ${phoneNumber}\n
+        ช่างที่ดำเนินงาน: ${technicianName}\n
+        นัดพบวันที่: ${eventStartDate}\n
+        เวลานัดพบ: ${eventStartTime || 'ไม่ระบุเวลา'}
+      `;
+
+      document.getElementById('confirmationText').innerText = confirmationText;
+
+      const modal = document.getElementById('myModal');
+      modal.classList.remove('hidden');
+
+      document.getElementById('confirmButton').onclick = function() {
+        modal.classList.add('hidden');
+
+        const eventData = {
+          summary: 'ลูกค้านัดดูหน้างาน',
+          description: `ชื่อ นามสกุล: ${fullName}\nเบอร์โทร: ${phoneNumber}\nช่างที่ดำเนินงาน: ${technicianName}\nGPS Location: https://www.google.com/maps?q=${gpsLocation}\nนัดพบวันที่: ${eventStartDate}\nเวลานัดพบ: ${eventStartTime || 'ไม่ระบุเวลา'}`,
+          start: {
+            dateTime: new Date(eventStartDate + 'T' + (eventStartTime || '00:00') + ':00').toISOString(),
+            timeZone: 'Asia/Bangkok'
+          },
+          end: {
+            dateTime: new Date(new Date(eventStartDate + 'T' + (eventStartTime || '00:00') + ':00').getTime() + 3600000).toISOString(),
+            timeZone: 'Asia/Bangkok'
+          }
+        };
+
+        fetch('/addevent', {method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(eventData)
+        })
+        .then(response => response.json())
+        .then(data => {
+          if (data.error) {
+            const warningModal = document.getElementById('warningModal');
+            warningModal.classList.remove('hidden');
+          } else {
+            document.querySelectorAll('#eventForm input, #eventForm select').forEach(element => {
+              element.classList.add('disabled-input');
+              element.setAttribute('readonly', true);
+            });
+            document.querySelector('button[type="submit"]').classList.add('hidden');
+            
+            document.getElementById('status').innerText = '';
+            
+            document.getElementById('confirmationText').innerText = `
+              การจองคิวเสร็จสิ้นแล้ว!\n
+              ขอบคุณคุณ ${fullName} ที่ไว้ใจและเลือกเรา\n
+              เราจะติดต่อกลับไปยังหมายเลข: ${phoneNumber}\n
+              ขอบคุณค่ะ
+            `;
+            
+            document.getElementById('confirmButton').onclick = function() {
+              modal.style.display = "none";
+            };
+            
+            modal.classList.remove('hidden');
+          }
+        })
+        .catch(error => {
+          console.error('Error adding event:', error);
+          document.getElementById('status').innerText = 'เกิดข้อผิดพลาดในการจองคิว โปรดลองอีกครั้ง';
+        });
+      };
+
+      document.getElementsByClassName('close')[0].onclick = function() {
+        document.getElementById('myModal').classList.add('hidden');
+      };
+
+      document.getElementById('closeWarning').onclick = function() {
+        document.getElementById('warningModal').classList.add('hidden');
+      };
+
+      window.onclick = function(event) {
+        if (event.target == document.getElementById('myModal')) {
+          document.getElementById('myModal').classList.add('hidden');
+        }
+        if (event.target == document.getElementById('warningModal')) {
+          document.getElementById('warningModal').classList.add('hidden');
+        }
+      };
+    });
+  </script>
+  <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyATzfO5QW9JBpWfCws7eFvvk22ZmBmcHSc&callback=initMap" async defer></script>
+</body>
+</html>
+
+         
